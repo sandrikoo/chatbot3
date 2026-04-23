@@ -91,15 +91,13 @@ struct AdjustmentsPanel: View {
         case .color:
             sliderGroup([.saturation, .temperature, .tint, .vibrance])
         case .effects:
-            sliderGroup([.contrast, .vibrance])
+            sliderGroup([.vignette, .grain])
         case .detail:
             sliderGroup([.sharpness])
-        case .optics, .geometry:
-            Text("Coming soon")
-                .font(.system(size: 13))
-                .foregroundStyle(Palette.textSecondary)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.vertical, 12)
+        case .optics:
+            sliderGroup([.vignette, .grain])
+        case .geometry:
+            sliderGroup([.rotation, .straighten])
         }
     }
 

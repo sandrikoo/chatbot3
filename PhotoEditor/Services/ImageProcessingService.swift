@@ -65,6 +65,42 @@ final class ImageProcessingService {
             if let out = f.outputImage { ciImage = out }
         }
 
+        if adjustments.vignette != 0 {
+            let f = CIFilter.vignette()
+            f.inputImage = ciImage
+            f.intensity = adjustments.vignette / 50.0
+            f.radius = 2.0
+            if let out = f.outputImage { ciImage = out }
+        }
+
+        if adjustments.grain > 0 {
+            let noise = CIFilter.randomGenerator()
+            if let noiseImg = noise.outputImage {
+                let grayscale = CIFilter.colorMatrix()
+                grayscale.inputImage = noiseImg.cropped(to: ciImage.extent)
+                let amt = CGFloat(adjustments.grain / 100.0)
+                grayscale.rVector = CIVector(x: amt, y: 0, z: 0, w: 0)
+                grayscale.gVector = CIVector(x: 0, y: amt, z: 0, w: 0)
+                grayscale.bVector = CIVector(x: 0, y: 0, z: amt, w: 0)
+                grayscale.aVector = CIVector(x: 0, y: 0, z: 0, w: amt * 0.6)
+                if let grain = grayscale.outputImage {
+                    let composite = CIFilter.sourceOverCompositing()
+                    composite.inputImage = grain
+                    composite.backgroundImage = ciImage
+                    if let out = composite.outputImage {
+                        ciImage = out.cropped(to: ciImage.extent)
+                    }
+                }
+            }
+        }
+
+        let totalRotation = adjustments.rotation + adjustments.straighten
+        if totalRotation != 0 {
+            let radians = CGFloat(totalRotation) * .pi / 180
+            let transform = CGAffineTransform(rotationAngle: radians)
+            ciImage = ciImage.transformed(by: transform)
+        }
+
         guard let cgOutput = context.createCGImage(ciImage, from: ciImage.extent) else {
             return image
         }
@@ -79,13 +115,41 @@ final class ImageProcessingService {
             ctx.fill(CGRect(origin: .zero, size: canvasSize))
 
             for layer in layers.filter(\.isVisible).sorted(by: { $0.zIndex < $1.zIndex }) {
-                guard let img = layer.image else { continue }
-                let processed = applyFilters(image: img, adjustments: layer.adjustments)
-                let target = aspectFit(imageSize: processed.size, in: canvasSize)
                 ctx.cgContext.saveGState()
                 ctx.cgContext.setAlpha(CGFloat(layer.opacity))
+
+                let center = CGPoint(x: canvasSize.width / 2, y: canvasSize.height / 2)
+                ctx.cgContext.translateBy(x: center.x + layer.offset.width,
+                                          y: center.y + layer.offset.height)
+                ctx.cgContext.rotate(by: CGFloat(layer.rotation.radians))
+                ctx.cgContext.scaleBy(x: layer.scale, y: layer.scale)
+                ctx.cgContext.translateBy(x: -center.x, y: -center.y)
                 ctx.cgContext.concatenate(layer.transform)
-                processed.draw(in: target)
+
+                if let img = layer.image {
+                    let processed = applyFilters(image: img, adjustments: layer.adjustments)
+                    let target = aspectFit(imageSize: processed.size, in: canvasSize)
+                    processed.draw(in: target)
+                }
+
+                if let text = layer.text, !text.isEmpty, layer.type == .text {
+                    let attrs: [NSAttributedString.Key: Any] = [
+                        .font: UIFont.systemFont(ofSize: 72, weight: .semibold),
+                        .foregroundColor: UIColor.white
+                    ]
+                    let string = NSAttributedString(string: text, attributes: attrs)
+                    let size = string.size()
+                    let origin = CGPoint(x: (canvasSize.width - size.width) / 2,
+                                         y: (canvasSize.height - size.height) / 2)
+                    string.draw(at: origin)
+                }
+
+                if !layer.drawing.bounds.isEmpty {
+                    let bounds = CGRect(origin: .zero, size: canvasSize)
+                    let drawingImage = layer.drawing.image(from: bounds, scale: 1.0)
+                    drawingImage.draw(in: bounds)
+                }
+
                 ctx.cgContext.restoreGState()
             }
         }

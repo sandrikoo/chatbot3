@@ -1,6 +1,7 @@
 import SwiftUI
 import Combine
 import UIKit
+import PencilKit
 
 struct EditorState: Equatable {
     var layers: [LayerModel]
@@ -24,6 +25,20 @@ enum AppTab: String, CaseIterable, Identifiable {
     var title: String { rawValue.capitalized }
 }
 
+enum ActiveSheet: Identifiable {
+    case imagePicker
+    case textEditor(UUID)
+    case exportResult(String)
+
+    var id: String {
+        switch self {
+        case .imagePicker: return "picker"
+        case .textEditor(let id): return "text-\(id)"
+        case .exportResult(let msg): return "export-\(msg)"
+        }
+    }
+}
+
 @MainActor
 final class EditorViewModel: ObservableObject {
     @Published var layers: [LayerModel] = []
@@ -35,6 +50,11 @@ final class EditorViewModel: ObservableObject {
     @Published var canvasOffset: CGSize = .zero
     @Published var showAddLayerMenu: Bool = false
     @Published var showAdjustmentsPanel: Bool = true
+    @Published var activeSheet: ActiveSheet?
+    @Published var cropRect: CGRect? = nil
+    @Published var isExporting: Bool = false
+    @Published var brushColor: Color = .white
+    @Published var brushWidth: CGFloat = 8
 
     private(set) var historyStack: [EditorState] = []
     private(set) var redoStack: [EditorState] = []
@@ -51,7 +71,6 @@ final class EditorViewModel: ObservableObject {
         return layers.first { $0.id == id }
     }
 
-    // Builds a demo layer stack so the UI has something to render on launch.
     private func seedDemoProject() {
         let size = CGSize(width: 1200, height: 1600)
         let background = solidImage(color: .black, size: size)
@@ -68,7 +87,6 @@ final class EditorViewModel: ObservableObject {
         saveStateToHistory()
     }
 
-    // Creates a new layer from a UIImage and makes it active.
     func importImage(image: UIImage, name: String = "Image") {
         saveStateToHistory()
         let zIndex = (layers.map(\.zIndex).max() ?? 0) + 1
@@ -83,13 +101,25 @@ final class EditorViewModel: ObservableObject {
         activeLayerId = layer.id
     }
 
-    // Flattens all visible layers and applies global adjustments.
     func exportImage(canvasSize: CGSize = CGSize(width: 1200, height: 1600)) -> UIImage {
         let flattened = processor.mergeLayers(layers: layers, canvasSize: canvasSize)
         return processor.applyFilters(image: flattened, adjustments: adjustments.adjustments)
     }
 
-    // Updates the adjustment state and forwards to the active layer for live preview.
+    func exportToPhotos() {
+        Task { @MainActor in
+            isExporting = true
+            defer { isExporting = false }
+            let image = exportImage()
+            do {
+                try await PhotoExporter.shared.save(image)
+                activeSheet = .exportResult("Saved to Photos")
+            } catch {
+                activeSheet = .exportResult(error.localizedDescription)
+            }
+        }
+    }
+
     func applyAdjustment(type: AdjustmentType, value: Float) {
         adjustments.adjustments.set(value, for: type)
         guard let id = activeLayerId,
@@ -98,7 +128,6 @@ final class EditorViewModel: ObservableObject {
         layers[idx].adjustments.set(value, for: type)
     }
 
-    // Persists the current adjustment slider values into history.
     func commitAdjustment() {
         saveStateToHistory()
     }
@@ -128,28 +157,30 @@ final class EditorViewModel: ObservableObject {
     // MARK: Layers
 
     func addLayer(type: LayerType) {
-        saveStateToHistory()
-        let zIndex = (layers.map(\.zIndex).max() ?? 0) + 1
-        let layer: LayerModel
         switch type {
         case .image:
-            let placeholder = solidImage(color: .gray, size: CGSize(width: 600, height: 600))
-            layer = LayerModel(type: .image, name: "Image \(zIndex)",
-                               image: placeholder, zIndex: zIndex,
-                               thumbnail: processor.generateThumbnail(from: placeholder))
+            activeSheet = .imagePicker
+            return
         case .text:
-            layer = LayerModel(type: .text, name: "Text \(zIndex)",
-                               text: "Double tap to edit", zIndex: zIndex)
+            saveStateToHistory()
+            let zIndex = (layers.map(\.zIndex).max() ?? 0) + 1
+            let layer = LayerModel(type: .text, name: "Text \(zIndex)",
+                                   text: "Tap to edit", zIndex: zIndex)
+            layers.append(layer)
+            activeLayerId = layer.id
+            activeSheet = .textEditor(layer.id)
         case .shape:
+            saveStateToHistory()
+            let zIndex = (layers.map(\.zIndex).max() ?? 0) + 1
             let placeholder = solidImage(color: .systemBlue, size: CGSize(width: 400, height: 400))
-            layer = LayerModel(type: .shape, name: "Shape \(zIndex)",
-                               image: placeholder, shapeColor: .blue, zIndex: zIndex,
-                               thumbnail: processor.generateThumbnail(from: placeholder))
+            let layer = LayerModel(type: .shape, name: "Shape \(zIndex)",
+                                   image: placeholder, shapeColor: .blue, zIndex: zIndex,
+                                   thumbnail: processor.generateThumbnail(from: placeholder))
+            layers.append(layer)
+            activeLayerId = layer.id
         case .background:
             return
         }
-        layers.append(layer)
-        activeLayerId = layer.id
     }
 
     func deleteLayer(layerId: UUID) {
@@ -208,10 +239,67 @@ final class EditorViewModel: ObservableObject {
         activeLayerId = copy.id
     }
 
+    func updateLayerText(id: UUID, text: String) {
+        guard let idx = layers.firstIndex(where: { $0.id == id }) else { return }
+        saveStateToHistory()
+        layers[idx].text = text
+        layers[idx].name = text.isEmpty ? "Text" : String(text.prefix(16))
+    }
+
+    func updateLayerOffset(id: UUID, offset: CGSize) {
+        guard let idx = layers.firstIndex(where: { $0.id == id }), !layers[idx].isLocked else { return }
+        layers[idx].offset = offset
+    }
+
+    func updateLayerScale(id: UUID, scale: CGFloat) {
+        guard let idx = layers.firstIndex(where: { $0.id == id }), !layers[idx].isLocked else { return }
+        layers[idx].scale = max(0.1, min(scale, 5.0))
+    }
+
+    func updateLayerRotation(id: UUID, angle: Angle) {
+        guard let idx = layers.firstIndex(where: { $0.id == id }), !layers[idx].isLocked else { return }
+        layers[idx].rotation = angle
+    }
+
+    func updateLayerDrawing(id: UUID, drawing: PKDrawing) {
+        guard let idx = layers.firstIndex(where: { $0.id == id }), !layers[idx].isLocked else { return }
+        layers[idx].drawing = drawing
+    }
+
+    func commitLayerTransform() {
+        saveStateToHistory()
+    }
+
+    func applyCrop(rect: CGRect, containerSize: CGSize) {
+        guard let id = activeLayerId,
+              let idx = layers.firstIndex(where: { $0.id == id }),
+              let img = layers[idx].image else { return }
+        saveStateToHistory()
+        let scaleX = img.size.width / containerSize.width
+        let scaleY = img.size.height / containerSize.height
+        let cropped = CGRect(
+            x: rect.origin.x * scaleX,
+            y: rect.origin.y * scaleY,
+            width: rect.width * scaleX,
+            height: rect.height * scaleY
+        )
+        if let cg = img.cgImage?.cropping(to: cropped) {
+            let newImg = UIImage(cgImage: cg, scale: img.scale, orientation: img.imageOrientation)
+            layers[idx].image = newImg
+            layers[idx].thumbnail = processor.generateThumbnail(from: newImg)
+        }
+        cropRect = nil
+        currentTool = .select
+    }
+
     // MARK: Tools
 
     func selectTool(_ tool: ToolType) {
         currentTool = tool
+        if tool == .crop, let img = activeLayer?.image {
+            _ = img
+            cropRect = CGRect(x: 0.1, y: 0.1, width: 0.8, height: 0.8)
+        }
     }
 
     // MARK: History

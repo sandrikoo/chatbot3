@@ -34,6 +34,10 @@ enum AdjustmentType: String, CaseIterable, Identifiable {
     case tint
     case sharpness
     case vibrance
+    case vignette
+    case grain
+    case rotation
+    case straighten
 
     var id: String { rawValue }
 
@@ -50,6 +54,10 @@ enum AdjustmentType: String, CaseIterable, Identifiable {
         case .tint:        return -100...100
         case .sharpness:   return 0...100
         case .vibrance:    return -100...100
+        case .vignette:    return -100...100
+        case .grain:       return 0...100
+        case .rotation:    return -180...180
+        case .straighten:  return -45...45
         }
     }
 

@@ -31,8 +31,52 @@ struct EditorView: View {
 
                 BottomNavigationBar()
             }
+
+            if vm.isExporting {
+                ProgressView("Exporting…")
+                    .padding(24)
+                    .background(Palette.panel, in: RoundedRectangle(cornerRadius: 14))
+                    .foregroundStyle(.white)
+            }
         }
         .animation(.easeInOut(duration: 0.2), value: vm.showAdjustmentsPanel)
+        .sheet(item: $vm.activeSheet) { sheet in
+            switch sheet {
+            case .imagePicker:
+                ImagePickerView { image in
+                    vm.importImage(image: image)
+                    vm.activeSheet = nil
+                }
+            case .textEditor(let id):
+                TextEditorSheet(layerId: id)
+            case .exportResult(let message):
+                ExportResultSheet(message: message)
+            }
+        }
+    }
+}
+
+private struct ExportResultSheet: View {
+    @Environment(\.dismiss) private var dismiss
+    let message: String
+
+    var body: some View {
+        VStack(spacing: 16) {
+            Image(systemName: "checkmark.circle.fill")
+                .font(.system(size: 48))
+                .foregroundStyle(Palette.accent)
+            Text(message)
+                .font(.headline)
+                .foregroundStyle(.white)
+                .multilineTextAlignment(.center)
+            Button("Done") { dismiss() }
+                .buttonStyle(.borderedProminent)
+                .tint(Palette.accent)
+        }
+        .padding(32)
+        .frame(maxWidth: .infinity)
+        .background(Palette.background.ignoresSafeArea())
+        .presentationDetents([.height(240)])
     }
 }
 

@@ -10,6 +10,10 @@ struct AdjustmentModel: Equatable {
     var tint: Float = 0
     var sharpness: Float = 0
     var vibrance: Float = 0
+    var vignette: Float = 0
+    var grain: Float = 0
+    var rotation: Float = 0      // degrees, -180...180
+    var straighten: Float = 0    // degrees, -45...45
 
     static let identity = AdjustmentModel()
 
@@ -24,6 +28,10 @@ struct AdjustmentModel: Equatable {
         case .tint:        return tint
         case .sharpness:   return sharpness
         case .vibrance:    return vibrance
+        case .vignette:    return vignette
+        case .grain:       return grain
+        case .rotation:    return rotation
+        case .straighten:  return straighten
         }
     }
 
@@ -38,6 +46,10 @@ struct AdjustmentModel: Equatable {
         case .tint:        tint = value
         case .sharpness:   sharpness = value
         case .vibrance:    vibrance = value
+        case .vignette:    vignette = value
+        case .grain:       grain = value
+        case .rotation:    rotation = value
+        case .straighten:  straighten = value
         }
     }
 }

@@ -1,5 +1,6 @@
 import SwiftUI
 import UIKit
+import PencilKit
 
 enum LayerType: String {
     case image
@@ -19,9 +20,13 @@ struct LayerModel: Identifiable, Equatable {
     var isLocked: Bool
     var opacity: Float
     var transform: CGAffineTransform
+    var offset: CGSize
+    var scale: CGFloat
+    var rotation: Angle
     var zIndex: Int
     var adjustments: AdjustmentModel
     var thumbnail: UIImage?
+    var drawing: PKDrawing
 
     init(
         id: UUID = UUID(),
@@ -34,9 +39,13 @@ struct LayerModel: Identifiable, Equatable {
         isLocked: Bool = false,
         opacity: Float = 1.0,
         transform: CGAffineTransform = .identity,
+        offset: CGSize = .zero,
+        scale: CGFloat = 1.0,
+        rotation: Angle = .zero,
         zIndex: Int = 0,
         adjustments: AdjustmentModel = .identity,
-        thumbnail: UIImage? = nil
+        thumbnail: UIImage? = nil,
+        drawing: PKDrawing = PKDrawing()
     ) {
         self.id = id
         self.type = type
@@ -48,9 +57,13 @@ struct LayerModel: Identifiable, Equatable {
         self.isLocked = isLocked
         self.opacity = opacity
         self.transform = transform
+        self.offset = offset
+        self.scale = scale
+        self.rotation = rotation
         self.zIndex = zIndex
         self.adjustments = adjustments
         self.thumbnail = thumbnail ?? image
+        self.drawing = drawing
     }
 
     static func == (lhs: LayerModel, rhs: LayerModel) -> Bool {
@@ -60,6 +73,10 @@ struct LayerModel: Identifiable, Equatable {
         lhs.opacity == rhs.opacity &&
         lhs.zIndex == rhs.zIndex &&
         lhs.adjustments == rhs.adjustments &&
-        lhs.text == rhs.text
+        lhs.text == rhs.text &&
+        lhs.offset == rhs.offset &&
+        lhs.scale == rhs.scale &&
+        lhs.rotation == rhs.rotation &&
+        lhs.drawing.dataRepresentation() == rhs.drawing.dataRepresentation()
     }
 }

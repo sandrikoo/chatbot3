@@ -56,9 +56,7 @@ struct TopBar: View {
                         .foregroundStyle(Palette.textPrimary)
                 }
 
-                Button {
-                    _ = vm.exportImage()
-                } label: {
+                Button { vm.exportToPhotos() } label: {
                     Image(systemName: "square.and.arrow.up")
                         .foregroundStyle(Palette.textPrimary)
                 }
