@@ -1,0 +1,11 @@
+node_modules
+dist
+dist-ssr
+*.local
+.DS_Store
+.vite
+*.tsbuildinfo
+# stray tsc emits (we use noEmit)
+src/**/*.js
+src/**/*.js.map
+src/**/*.d.ts
